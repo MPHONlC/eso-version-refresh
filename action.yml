@@ -1,0 +1,91 @@
+name: 'ESO Addon Version Refresh'
+description: 'Refreshes the date-prefix portion of an Elder Scrolls Online addon manifest AddOnVersion (YYMMDDVVV format) to today, preserving the version suffix, and commits+pushes if it changed.'
+author: 'MPHONlC'
+branding:
+  icon: 'refresh-cw'
+  color: 'blue'
+
+inputs:
+  manifest_file:
+    description: 'Path to the .addon manifest file'
+    required: true
+  git_name:
+    description: 'Git name to use for the refresh commit'
+    required: true
+  git_email:
+    description: 'Git email to use for the refresh commit'
+    required: true
+  skip_ci:
+    description: "Append [skip ci] to the commit message, to avoid a self-triggering push loop if this action runs from a push-triggered workflow"
+    required: false
+    default: 'true'
+
+outputs:
+  changed:
+    description: "'true' if the manifest was updated, 'false' if it was already current"
+    value: ${{ steps.refresh.outputs.changed }}
+  old_version:
+    description: 'The AddOnVersion before this run'
+    value: ${{ steps.refresh.outputs.old }}
+  new_version:
+    description: 'The AddOnVersion after this run'
+    value: ${{ steps.refresh.outputs.new }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Refresh AddOnVersion date prefix only (never the version suffix)
+      id: refresh
+      shell: bash
+      env:
+        MANIFEST: ${{ inputs.manifest_file }}
+        GIT_NAME: ${{ inputs.git_name }}
+        GIT_EMAIL: ${{ inputs.git_email }}
+        SKIP_CI: ${{ inputs.skip_ci }}
+      run: |
+        TODAY=$(date +%y%m%d)
+        CURRENT=$(grep "^## AddOnVersion:" "$MANIFEST" | awk '{print $3}')
+        SUFFIX="${CURRENT: -3}"
+        NEW="${TODAY}${SUFFIX}"
+        echo "Current AddOnVersion: $CURRENT"
+        echo "New AddOnVersion:     $NEW"
+        echo "old=$CURRENT" >> "$GITHUB_OUTPUT"
+        echo "new=$NEW" >> "$GITHUB_OUTPUT"
+        if [ "$CURRENT" = "$NEW" ]; then
+          echo "Already up to date, nothing to commit."
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        sed -i "s/## AddOnVersion: $CURRENT/## AddOnVersion: $NEW/" "$MANIFEST"
+        git config user.name "$GIT_NAME"
+        git config user.email "$GIT_EMAIL"
+        git add "$MANIFEST"
+        MSG="chore: refresh AddOnVersion date to $TODAY"
+        if [ "$SKIP_CI" == "true" ]; then
+          MSG="$MSG [skip ci]"
+        fi
+        git commit -m "$MSG"
+        git push
+        echo "changed=true" >> "$GITHUB_OUTPUT"
+
+    - name: Annotate result
+      if: always()
+      shell: bash
+      run: |
+        STATUS="${{ steps.refresh.outcome }}"
+        if [ "$STATUS" != "success" ]; then
+          TITLE="Version Refresh Failed"
+          echo "::error title=$TITLE::Check the 'Refresh AddOnVersion date prefix' step's log above."
+        elif [ "${{ steps.refresh.outputs.changed }}" == "true" ]; then
+          TITLE="Version Refresh Complete"
+          echo "::notice title=$TITLE::AddOnVersion updated from ${{ steps.refresh.outputs.old }} to ${{ steps.refresh.outputs.new }} and pushed."
+        else
+          TITLE="Version Already Up To Date"
+          echo "::notice title=$TITLE::AddOnVersion is already ${{ steps.refresh.outputs.old }} - nothing to change."
+        fi
+        {
+          echo "## $TITLE"
+          echo ""
+          echo "- **Previous AddOnVersion:** ${{ steps.refresh.outputs.old }}"
+          echo "- **Current AddOnVersion:** ${{ steps.refresh.outputs.new }}"
+        } >> "$GITHUB_STEP_SUMMARY"
