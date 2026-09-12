@@ -1,5 +1,5 @@
 name: 'ESO Addon Version Refresh'
-description: 'Refreshes the date-prefix portion of ESO addon manifest AddOnVersion (YYMMDDVVV format) to today, preserving the version suffix.'
+description: 'Update date-prefix for ESO addon manifest AddOnVersion (YYMMDDVVV format) to today, preserving the version suffix.'
 author: 'MPHONlC'
 branding:
   icon: 'refresh-cw'
