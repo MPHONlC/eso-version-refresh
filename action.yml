@@ -1,5 +1,5 @@
-name: 'ESO Addon Version Refresh'
-description: 'Update date-prefix for ESO addon manifest AddOnVersion (YYMMDDVVV format) to today, preserving the version suffix.'
+name: 'Version Refresh'
+description: "Refreshes the date portion of an addon manifest's version field to today, leaving the rest of the value untouched."
 author: 'MPHONlC'
 branding:
   icon: 'refresh-cw'
@@ -7,8 +7,25 @@ branding:
 
 inputs:
   manifest_file:
-    description: 'Path to the .addon manifest file'
+    description: 'Path to the manifest file (.addon, .toc, or any similar text manifest)'
     required: true
+  field_name:
+    description: 'The manifest field to refresh, e.g. AddOnVersion, Version, Ver - matched as "## <field_name>: <value>"'
+    required: false
+    default: 'AddOnVersion'
+  format:
+    description: >
+      Template describing the field's value shape. Y/M/D mark date digits (repeat
+      for width: YY = 2-digit year, YYYY = 4-digit year), V marks version digits
+      (never touched, any width), any other character is a literal that must match
+      exactly (e.g. the dots in "V.V.V"). The Y/M/D run can be a prefix (YYMMDDVVV),
+      a suffix (VVVYYMMDD, VVMMDDYY), or use a different date order (DDMMYYVVV).
+      Use "NONE" if this field has no date component at all (plain semver, a plain
+      counter) - the action then just reports the value unchanged. Use "TIMESTAMP"
+      to replace the whole field with the current Unix timestamp instead (a real
+      counter/version bump is never supported here - only date/timestamp freshness).
+    required: false
+    default: 'YYMMDDVVV'
   git_name:
     description: 'Git name to use for the refresh commit'
     required: true
@@ -22,51 +39,40 @@ inputs:
 
 outputs:
   changed:
-    description: "'true' if the manifest was updated, 'false' if it was already current"
+    description: "'true' if the manifest was updated, 'false' if it was already current (or the format is NONE)"
     value: ${{ steps.refresh.outputs.changed }}
   old_version:
-    description: 'The AddOnVersion before this run'
+    description: 'The field value before this run'
     value: ${{ steps.refresh.outputs.old }}
   new_version:
-    description: 'The AddOnVersion after this run'
+    description: 'The field value after this run'
     value: ${{ steps.refresh.outputs.new }}
 
 runs:
   using: 'composite'
   steps:
-    - name: Refresh AddOnVersion date prefix only (never the version suffix)
+    - name: Refresh the manifest's date-based version field
       id: refresh
       shell: bash
-      env:
-        MANIFEST: ${{ inputs.manifest_file }}
-        GIT_NAME: ${{ inputs.git_name }}
-        GIT_EMAIL: ${{ inputs.git_email }}
-        SKIP_CI: ${{ inputs.skip_ci }}
       run: |
-        TODAY=$(date +%y%m%d)
-        CURRENT=$(grep "^## AddOnVersion:" "$MANIFEST" | awk '{print $3}')
-        SUFFIX="${CURRENT: -3}"
-        NEW="${TODAY}${SUFFIX}"
-        echo "Current AddOnVersion: $CURRENT"
-        echo "New AddOnVersion:     $NEW"
-        echo "old=$CURRENT" >> "$GITHUB_OUTPUT"
-        echo "new=$NEW" >> "$GITHUB_OUTPUT"
-        if [ "$CURRENT" = "$NEW" ]; then
-          echo "Already up to date, nothing to commit."
-          echo "changed=false" >> "$GITHUB_OUTPUT"
-          exit 0
+        OUTPUT=$(python3 "${{ github.action_path }}/refresh_version.py" \
+          --manifest-file "${{ inputs.manifest_file }}" \
+          --field-name "${{ inputs.field_name }}" \
+          --format "${{ inputs.format }}")
+        echo "$OUTPUT"
+        CHANGED=$(echo "$OUTPUT" | grep '^changed=' | cut -d= -f2)
+
+        if [ "$CHANGED" == "true" ]; then
+          git config user.name "${{ inputs.git_name }}"
+          git config user.email "${{ inputs.git_email }}"
+          git add "${{ inputs.manifest_file }}"
+          MSG="chore: refresh ${{ inputs.field_name }} date"
+          if [ "${{ inputs.skip_ci }}" == "true" ]; then
+            MSG="$MSG [skip ci]"
+          fi
+          git commit -m "$MSG"
+          git push
         fi
-        sed -i "s/## AddOnVersion: $CURRENT/## AddOnVersion: $NEW/" "$MANIFEST"
-        git config user.name "$GIT_NAME"
-        git config user.email "$GIT_EMAIL"
-        git add "$MANIFEST"
-        MSG="chore: refresh AddOnVersion date to $TODAY"
-        if [ "$SKIP_CI" == "true" ]; then
-          MSG="$MSG [skip ci]"
-        fi
-        git commit -m "$MSG"
-        git push
-        echo "changed=true" >> "$GITHUB_OUTPUT"
 
     - name: Annotate result
       if: always()
@@ -75,17 +81,18 @@ runs:
         STATUS="${{ steps.refresh.outcome }}"
         if [ "$STATUS" != "success" ]; then
           TITLE="Version Refresh Failed"
-          echo "::error title=$TITLE::Check the 'Refresh AddOnVersion date prefix' step's log above."
+          echo "::error title=$TITLE::Check the 'Refresh the manifest's date-based version field' step's log above."
         elif [ "${{ steps.refresh.outputs.changed }}" == "true" ]; then
           TITLE="Version Refresh Complete"
-          echo "::notice title=$TITLE::AddOnVersion updated from ${{ steps.refresh.outputs.old }} to ${{ steps.refresh.outputs.new }} and pushed."
+          echo "::notice title=$TITLE::${{ inputs.field_name }} updated from ${{ steps.refresh.outputs.old }} to ${{ steps.refresh.outputs.new }} and pushed."
         else
           TITLE="Version Already Up To Date"
-          echo "::notice title=$TITLE::AddOnVersion is already ${{ steps.refresh.outputs.old }} - nothing to change."
+          echo "::notice title=$TITLE::${{ inputs.field_name }} is already ${{ steps.refresh.outputs.old }} - nothing to change."
         fi
         {
           echo "## $TITLE"
           echo ""
-          echo "- **Previous AddOnVersion:** ${{ steps.refresh.outputs.old }}"
-          echo "- **Current AddOnVersion:** ${{ steps.refresh.outputs.new }}"
+          echo "- **Field:** ${{ inputs.field_name }}"
+          echo "- **Previous value:** ${{ steps.refresh.outputs.old }}"
+          echo "- **Current value:** ${{ steps.refresh.outputs.new }}"
         } >> "$GITHUB_STEP_SUMMARY"
