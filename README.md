@@ -47,7 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: MPHONlC/version-refresh@Version-0.0.2
+      - uses: MPHONlC/version-refresh@Version-0.0.3
         with:
           manifest_file: 'MyAddon.addon'
           field_name: 'AddOnVersion'
