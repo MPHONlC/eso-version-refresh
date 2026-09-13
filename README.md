@@ -47,7 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: MPHONlC/version-refresh@Version-0.0.1
+      - uses: MPHONlC/version-refresh@Version-0.0.2
         with:
           manifest_file: 'MyAddon.addon'
           field_name: 'AddOnVersion'
@@ -78,6 +78,9 @@ jobs:
 ## Requirements
 
 - The calling job needs `permissions: contents: write`, since this action pushes directly.
+
+> [!IMPORTANT]
+> Without `permissions: contents: write` on the job, the commit/push step fails - this is the most common setup mistake with this action.
 
 ## License
 
