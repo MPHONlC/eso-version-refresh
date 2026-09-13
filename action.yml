@@ -1,5 +1,5 @@
 name: 'Version Refresh'
-description: "Refreshes the date portion of an addon manifest's version field to today, leaving the rest of the value untouched."
+description: "Refreshes the date portion of an addon manifest's version field to today."
 author: 'MPHONlC'
 branding:
   icon: 'refresh-cw'
@@ -10,20 +10,11 @@ inputs:
     description: 'Path to the manifest file (.addon, .toc, or any similar text manifest)'
     required: true
   field_name:
-    description: 'The manifest field to refresh, e.g. AddOnVersion, Version, Ver - matched as "## <field_name>: <value>"'
+    description: 'The manifest field to refresh, matched as "## <field_name>: <value>"'
     required: false
     default: 'AddOnVersion'
   format:
-    description: >
-      Template describing the field's value shape. Y/M/D mark date digits (repeat
-      for width: YY = 2-digit year, YYYY = 4-digit year), V marks version digits
-      (never touched, any width), any other character is a literal that must match
-      exactly (e.g. the dots in "V.V.V"). The Y/M/D run can be a prefix (YYMMDDVVV),
-      a suffix (VVVYYMMDD, VVMMDDYY), or use a different date order (DDMMYYVVV).
-      Use "NONE" if this field has no date component at all (plain semver, a plain
-      counter) - the action then just reports the value unchanged. Use "TIMESTAMP"
-      to replace the whole field with the current Unix timestamp instead (a real
-      counter/version bump is never supported here - only date/timestamp freshness).
+    description: 'Template for the field value: Y/M/D for date digits, V for version digits, "NONE" for no date, "TIMESTAMP" for a Unix timestamp field'
     required: false
     default: 'YYMMDDVVV'
   git_name:
@@ -33,13 +24,13 @@ inputs:
     description: 'Git email to use for the refresh commit'
     required: true
   skip_ci:
-    description: "Append [skip ci] to the commit message, to avoid a self-triggering push loop if this action runs from a push-triggered workflow"
+    description: 'Append [skip ci] to the commit message'
     required: false
     default: 'true'
 
 outputs:
   changed:
-    description: "'true' if the manifest was updated, 'false' if it was already current (or the format is NONE)"
+    description: "'true' if the manifest was updated, 'false' otherwise"
     value: ${{ steps.refresh.outputs.changed }}
   old_version:
     description: 'The field value before this run'
